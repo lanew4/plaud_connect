@@ -1,43 +1,52 @@
 const axios = require('axios');
 
-const BASE_URL = 'https://platform.plaud.ai/developer/api';
+const BASE_URL = 'https://api.plaud.ai';
 
 function client() {
+  const raw = process.env.PLAUD_TOKEN ?? '';
+  const token = raw.toLowerCase().startsWith('bearer ')
+    ? raw.slice(7).trim()
+    : raw.trim();
+
   return axios.create({
     baseURL: BASE_URL,
-    headers: {
-      Authorization: `Bearer ${process.env.PLAUD_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${token}` },
   });
 }
 
 async function getRecentFiles(days = 7) {
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceTs = Math.floor(since.getTime() / 1000);
+  const since = Date.now() - days * 24 * 60 * 60 * 1000;
 
   const res = await client().get('/file/simple/web', {
     params: { skip: 0, limit: 500, is_trash: 0, sort_by: 'edit_time', is_desc: true },
   });
 
-  const files = res.data?.data ?? res.data ?? [];
+  const files = res.data?.data_file_list ?? [];
   return files.filter((f) => {
-    const ts = f.start_time ?? f.edit_time ?? 0;
-    return ts >= sinceTs;
+    // start_time is in milliseconds
+    return f.is_summary && (f.start_time ?? 0) >= since;
   });
 }
 
-async function getFileSummary(fileId) {
-  const res = await client().get(`/file/detail/${fileId}`);
-  const detail = res.data?.data ?? res.data ?? {};
+async function getFileSummary(file) {
+  const res = await client().get(`/file/detail/${file.id}`);
+  const detail = res.data?.data ?? {};
+
+  const summaryItem = (detail.content_list ?? []).find(
+    (c) => c.data_type === 'auto_sum_note'
+  );
+
+  let summaryText = null;
+  if (summaryItem?.data_link) {
+    const s3 = await axios.get(summaryItem.data_link);
+    summaryText = s3.data?.ai_content ?? null;
+  }
+
   return {
-    id: fileId,
-    name: detail.filename ?? detail.name ?? fileId,
-    date: detail.start_time
-      ? new Date(detail.start_time * 1000).toLocaleDateString('en-US', { dateStyle: 'medium' })
-      : 'Unknown date',
-    summary: detail.ai_content ?? detail.summary ?? null,
+    id: file.id,
+    name: detail.file_name ?? file.filename ?? file.id,
+    date: new Date(file.start_time).toLocaleDateString('en-US', { dateStyle: 'medium' }),
+    summary: summaryText,
   };
 }
 

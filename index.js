@@ -27,7 +27,7 @@ const { execSync } = require('child_process');
   console.log(`Found ${files.length} recording(s). Fetching summaries...`);
   const summaries = [];
   for (const file of files) {
-    const detail = await getFileSummary(file.file_id ?? file.id);
+    const detail = await getFileSummary(file);
     if (detail.summary) {
       summaries.push(detail);
       console.log(`  ✓ ${detail.name} (${detail.date})`);
